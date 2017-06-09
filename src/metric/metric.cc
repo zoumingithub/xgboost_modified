@@ -25,7 +25,7 @@ Metric* Metric::Create(const std::string& name) {
     std::string prefix = buf.substr(0, pos);
     auto *e = ::dmlc::Registry< ::xgboost::MetricReg>::Get()->Find(prefix.c_str());
     if (e == nullptr) {
-      LOG(FATAL) << "Unknown metric function " << name;
+      LOG(FATAL) << "Min updated: Unknown metric function  " << name;
     }
     return (e->body)(buf.substr(pos + 1, buf.length()).c_str());
   }

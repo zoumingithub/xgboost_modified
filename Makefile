@@ -52,7 +52,7 @@ endif
 endif
 
 export LDFLAGS= -pthread -lm $(ADD_LDFLAGS) $(DMLC_LDFLAGS) $(PLUGIN_LDFLAGS)
-export CFLAGS=  -std=c++11 -Wall -Wno-unknown-pragmas -Iinclude $(ADD_CFLAGS) $(PLUGIN_CFLAGS)
+export CFLAGS=  -g -std=c++11 -Wall -Wno-unknown-pragmas -Iinclude $(ADD_CFLAGS) $(PLUGIN_CFLAGS)
 CFLAGS += -I$(DMLC_CORE)/include -I$(RABIT)/include
 #java include path
 export JAVAINCFLAGS = -I${JAVA_HOME}/include -I./java

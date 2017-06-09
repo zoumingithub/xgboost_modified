@@ -48,7 +48,12 @@ struct MetaInfo {
    *  needed when the learning task is ranking.
    */
   std::vector<bst_uint> group_ptr;
-  /*! \brief weights of each instance, optional */
+  /*!
+   * \brief ranking pairs in pairwise models
+   */
+  std::vector<std::vector<bst_uint>> rankpairs;
+  std::vector<std::vector<float>> pairweight;
+/*! \brief weights of each instance, optional */
   std::vector<bst_float> weights;
   /*!
    * \brief initialized margins,

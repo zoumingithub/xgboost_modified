@@ -472,6 +472,21 @@ class DMatrix(object):
                                            c_array(ctypes.c_uint, group),
                                            len(group)))
 
+    def set_pairs(self,pairs, pair_weight, pair_offset,pair_len):
+        """Set group size of DMatrix (used for ranking).
+
+        Parameters
+        ----------
+        group : array like
+            Group size of each group
+        """
+        _check_call(_LIB.XGDMatrixSetGroup(self.handle,
+                                           c_array(ctypes.c_uint,pairs),
+                                           c_array(ctypes.c_float,pair_weight),
+                                           c_array(ctypes.c_uint,pair_offset),
+                                           c_array(ctypes.c_uint,pair_len),                                           
+                                           len(pairs)))
+
     def get_label(self):
         """Get the label of the DMatrix.
 

@@ -41,6 +41,110 @@ class LambdaRankObj : public ObjFunction {
                    const MetaInfo& info,
                    int iter,
                    std::vector<bst_gpair>* out_gpair) override {
+    CHECK_EQ(preds.size(), info.rankpairs.size()) << "pairs number predict size not match";
+    std::vector<bst_gpair>& gpair = *out_gpair;
+    gpair.resize(preds.size());
+    const bst_omp_uint docnum = static_cast<bst_omp_uint>(info.rankpairs.size());
+    #pragma omp parallel
+    {
+      // parall construct, declare random number generator here, so that each
+      // thread use its own random number generator, seed by thread id and current iteration
+      common::RandomEngine rnd(iter * 1111 + omp_get_thread_num());
+
+      std::vector<LambdaPair> pairs;
+      std::vector< std::pair<bst_float, unsigned> > rec;
+      #pragma omp for schedule(static)
+      for (bst_omp_uint docid = 0; docid < docnum; ++docid) {
+        for (size_t i = 0; i < info.rankpairs[docid].size(); ++i) {
+          size_t cmp_docid = info.rankpairs[docid][i];
+          //float weight = common::Sigmoid(info.pairweight[docid][i]/30.0);
+          float weight = info.pairweight[docid][i];
+          int pos_id, neg_id;
+          if(info.pairweight[docid][i]>0) 
+          {
+             pos_id = docid;
+             neg_id = cmp_docid;
+          }
+          else{
+            pos_id = cmp_docid;
+            neg_id = docid;
+          }
+          
+          bst_float pos_pred = preds[pos_id];
+          bst_float neg_pred = preds[neg_id];
+          const float eps = 1e-16f;
+          const float w = std::max((float)eps,(float)std::fabs(weight));
+          bst_float p = common::Sigmoid(pos_pred - neg_pred);
+          bst_float g = p - 1.0f;
+          bst_float h = std::max(p * (1.0f - p), eps);
+          // accumulate gradient and hessian in both pid, and nid
+          gpair[pos_id].grad += g * w;
+          gpair[pos_id].hess += 2.0f * w * h;
+          gpair[neg_id].grad -= g * w;
+          gpair[neg_id].hess += 2.0f * w * h;
+        }
+      }
+    }
+  }
+  const char* DefaultEvalMetric(void) const override {
+    return "map";
+  }
+
+ protected:
+  /*! \brief helper information in a list */
+  struct ListEntry {
+    /*! \brief the predict score we in the data */
+    bst_float pred;
+    /*! \brief the actual label of the entry */
+    bst_float label;
+    /*! \brief row index in the data matrix */
+    unsigned rindex;
+    // constructor
+    ListEntry(bst_float pred, bst_float label, unsigned rindex)
+        : pred(pred), label(label), rindex(rindex) {}
+    // comparator by prediction
+    inline static bool CmpPred(const ListEntry &a, const ListEntry &b) {
+      return a.pred > b.pred;
+    }
+    // comparator by label
+    inline static bool CmpLabel(const ListEntry &a, const ListEntry &b) {
+      return a.label > b.label;
+    }
+  };
+  /*! \brief a pair in the lambda rank */
+  struct LambdaPair {
+    /*! \brief positive index: this is a position in the list */
+    unsigned pos_index;
+    /*! \brief negative index: this is a position in the list */
+    unsigned neg_index;
+    /*! \brief weight to be filled in */
+    bst_float weight;
+    // constructor
+    LambdaPair(unsigned pos_index, unsigned neg_index)
+        : pos_index(pos_index), neg_index(neg_index), weight(1.0f) {}
+  };
+  /*!
+   * \brief get lambda weight for existing pairs
+   * \param list a list that is sorted by pred score
+   * \param io_pairs record of pairs, containing the pairs to fill in weights
+   */
+  virtual void GetLambdaWeight(const std::vector<ListEntry> &sorted_list,
+                               std::vector<LambdaPair> *io_pairs) = 0;
+
+ private:
+  LambdaRankParam param_;
+};
+
+// objective for lambda rank
+class LambdaRankObj_BKP : public ObjFunction {
+ public:
+  void Configure(const std::vector<std::pair<std::string, std::string> >& args) override {
+    param_.InitAllowUnknown(args);
+  }
+  void GetGradient(const std::vector<bst_float>& preds,
+                   const MetaInfo& info,
+                   int iter,
+                   std::vector<bst_gpair>* out_gpair) override {
     CHECK_EQ(preds.size(), info.labels.size()) << "label size predict size not match";
     std::vector<bst_gpair>& gpair = *out_gpair;
     gpair.resize(preds.size());

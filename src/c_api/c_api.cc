@@ -471,6 +471,48 @@ XGB_DLL int XGDMatrixSetGroup(DMatrixHandle handle,
   API_END();
 }
 
+#include <iostream>
+XGB_DLL int XGDMatrixSetPairs(DMatrixHandle handle,
+                              const unsigned* rankpairs,
+                              float *pairweight,
+                              const unsigned* pair_offset, 
+                              const unsigned* pair_len,
+                              xgboost::bst_ulong len) {
+  API_BEGIN();
+  std::cout << "set pairs" <<std::endl;
+  std::shared_ptr<DMatrix> *pmat = static_cast<std::shared_ptr<DMatrix>*>(handle);
+  MetaInfo& info = pmat->get()->info();
+  std::cout << "set pairs" <<std::endl;
+  std::cout << "pair# " << len <<std::endl;
+  std::cout << "offset[0] "<< pair_offset[0] << std::endl;
+  std::cout << "pairweight[0] " << pairweight[0] << std::endl;
+  std::cout << "pair_len[0] " << pair_len[0] << std::endl;
+  info.rankpairs.resize(len);
+  info.pairweight.resize(len);
+  for (uint64_t i = 0; i < len; ++i) {
+    std::vector<bst_uint> cur_pairs;
+    //std::cout << "pair_len[i] "<<pair_len[i] << std::endl;
+    if(pair_len[i] > 10000)
+    {
+        std::cout << "pair_len["<<i<<"]" << pair_len[i] << std::endl;
+    }
+    cur_pairs.resize(pair_len[i]);
+    std::vector<float> cur_pair_weights;
+    cur_pair_weights.resize(pair_len[i]);
+    
+    for(unsigned int p=0; p<pair_len[i]; p++)
+    {
+        int pos = pair_offset[i] +p;
+        cur_pairs[p] = rankpairs[pos];
+        cur_pair_weights[p] = pairweight[pos];
+    }
+    info.rankpairs[i] = cur_pairs;
+    info.pairweight[i] = cur_pair_weights;
+  }
+  std::cout << "ranking pairs loaded" <<std::endl;
+  API_END();
+}
+
 XGB_DLL int XGDMatrixGetFloatInfo(const DMatrixHandle handle,
                                   const char* field,
                                   xgboost::bst_ulong* out_len,

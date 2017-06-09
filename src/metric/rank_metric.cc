@@ -7,6 +7,7 @@
 #include <xgboost/metric.h>
 #include <dmlc/registry.h>
 #include <cmath>
+#include <random>
 #include "../common/sync.h"
 #include "../common/math.h"
 
@@ -250,7 +251,7 @@ struct EvalNDCG : public EvalRankList{
   inline bst_float CalcDCG(const std::vector<std::pair<bst_float, unsigned> > &rec) const {
     double sumdcg = 0.0;
     for (size_t i = 0; i < rec.size() && i < this->topn_; ++i) {
-      const unsigned rel = rec[i].second;
+      const unsigned rel = (rec[i].second/60 <=5? rec[i].second/60:5);
       if (rel != 0) {
         sumdcg += ((1 << rel) - 1) / std::log2(i + 2.0);
       }
@@ -270,6 +271,81 @@ struct EvalNDCG : public EvalRankList{
       }
     }
     return dcg/idcg;
+  }
+};
+
+/*! \brief COR: corrected order ratio */
+struct EvalCOR : public EvalRankList{
+ public:
+  explicit EvalCOR(const char *name) : EvalRankList("ocr", name) {}
+
+ protected:
+  inline bst_float CalCOR(const std::vector<std::pair<bst_float, unsigned> > &rec) const {
+    unsigned int correct_pairs = 0;
+    unsigned int total_pairs = 0;
+    std::random_device rd;  //Will be used to obtain a seed for the random number engine
+    std::mt19937 gen(rd()); //Standard mersenne_twister_engine seeded with rd()
+    std::uniform_int_distribution<> dis(0,rec.size()-1);
+    for (size_t i = 0; i < rec.size(); ++i) {
+        size_t j = dis(gen);
+        if(rec[i].second == rec[j].second) continue;
+        total_pairs ++;
+        if(rec[i].first > rec[j].first && rec[i].second > rec[j].second ||
+          rec[i].first < rec[j].first && rec[i].second < rec[j].second )
+        {
+            correct_pairs ++;
+        }
+    }
+    return total_pairs==0?0:(double)correct_pairs/total_pairs;;
+  }
+  virtual bst_float EvalMetric(std::vector<std::pair<bst_float, unsigned> > &rec) const { // NOLINT(*)
+//    XGBOOST_PARALLEL_STABLE_SORT(rec.begin(), rec.end(), common::CmpFirst);
+    return CalCOR(rec);
+  }
+  const char* Name() const override {
+    return "ocr";
+  }
+};
+
+/*! \brief COR: corrected order ratio */
+struct EvalCrossEntropy : public EvalRankList{
+ public:
+  explicit EvalCrossEntropy(const char *name) : EvalRankList("pairloss", name) {}
+
+ protected:
+  inline bst_float CalCrossEntropy(const std::vector<std::pair<bst_float, unsigned> > &rec) const {
+    unsigned int correct_pairs = 0;
+    unsigned int total_pairs = rec.size();
+    if(total_pairs==0) return 0;
+    std::random_device rd;  //Will be used to obtain a seed for the random number engine
+    std::mt19937 gen(rd()); //Standard mersenne_twister_engine seeded with rd()
+    std::uniform_int_distribution<> dis(0,rec.size()-1);
+
+    double total_cost = 0;
+    for (size_t i = 0; i < rec.size(); ++i) {
+        size_t j = dis(gen); 
+       float pij = common::Sigmoid(rec[i].first - rec[j].first);
+       float Sij = 0;
+       if(rec[i].second > rec[j].second)
+       {
+            Sij = 1;
+        }
+        else if (rec[i].second < rec[j].second)
+        {
+            Sij = -1;
+        }
+        float pij_ = (Sij+1)/2;
+        total_cost += -(pij_*std::log(pij) + (1-pij_)*std::log(1-pij));
+        
+    }
+    return (double)total_cost/total_pairs;;
+  }
+  virtual bst_float EvalMetric(std::vector<std::pair<bst_float, unsigned> > &rec) const { // NOLINT(*)
+//    XGBOOST_PARALLEL_STABLE_SORT(rec.begin(), rec.end(), common::CmpFirst);
+    return CalCrossEntropy(rec);
+  }
+  const char* Name() const override {
+    return "pairloss";
   }
 };
 
@@ -319,6 +395,14 @@ XGBOOST_REGISTER_METRIC(Precision, "pre")
 XGBOOST_REGISTER_METRIC(NDCG, "ndcg")
 .describe("ndcg@k for rank.")
 .set_body([](const char* param) { return new EvalNDCG(param); });
+
+XGBOOST_REGISTER_METRIC(CrossEntropy, "pairloss")
+.describe("pairwise rank loss.")
+.set_body([](const char* param) { return new EvalCrossEntropy(param); });
+
+XGBOOST_REGISTER_METRIC(COR, "ocr")
+.describe("order correctness")
+.set_body([](const char* param) { return new EvalCOR(param); });
 
 XGBOOST_REGISTER_METRIC(MAP, "map")
 .describe("map@k for rank.")
