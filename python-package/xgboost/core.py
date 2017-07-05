@@ -480,12 +480,13 @@ class DMatrix(object):
         group : array like
             Group size of each group
         """
-        _check_call(_LIB.XGDMatrixSetGroup(self.handle,
+        print 'set_pairs# ',len(pairs)
+        _check_call(_LIB.XGDMatrixSetPairs(self.handle,
                                            c_array(ctypes.c_uint,pairs),
                                            c_array(ctypes.c_float,pair_weight),
                                            c_array(ctypes.c_uint,pair_offset),
                                            c_array(ctypes.c_uint,pair_len),                                           
-                                           len(pairs)))
+                                           len(pair_len)))
 
     def get_label(self):
         """Get the label of the DMatrix.
