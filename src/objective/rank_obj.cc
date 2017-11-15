@@ -45,6 +45,10 @@ class LambdaRankObj : public ObjFunction {
     std::vector<bst_gpair>& gpair = *out_gpair;
     gpair.resize(preds.size());
     const bst_omp_uint docnum = static_cast<bst_omp_uint>(info.rankpairs.size());
+    double total_pair_loss = 0;
+    double total_cls_loss = 0;
+    double total_weight = 0;
+
     #pragma omp parallel
     {
       // parall construct, declare random number generator here, so that each
@@ -70,21 +74,40 @@ class LambdaRankObj : public ObjFunction {
             neg_id = docid;
           }
           
+	  const float alpha = 0.5;
           bst_float pos_pred = preds[pos_id];
           bst_float neg_pred = preds[neg_id];
           const float eps = 1e-16f;
-          const float w = std::max((float)eps,(float)std::fabs(weight));
+          const float w = 1.0f; //std::max((float)eps,(float)std::fabs(weight));
           bst_float p = common::Sigmoid(pos_pred - neg_pred);
           bst_float g = p - 1.0f;
           bst_float h = std::max(p * (1.0f - p), eps);
           // accumulate gradient and hessian in both pid, and nid
-          gpair[pos_id].grad += g * w;
-          gpair[pos_id].hess += 2.0f * w * h;
-          gpair[neg_id].grad -= g * w;
-          gpair[neg_id].hess += 2.0f * w * h;
+          gpair[pos_id].grad += alpha*g * w;
+          gpair[pos_id].hess += alpha*2.0f * w * h;
+          gpair[neg_id].grad -= alpha*g * w;
+          gpair[neg_id].hess += alpha*2.0f * w * h;
+	  float pos_label = info.labels[pos_id]>=5?1:0;
+	  float neg_label = info.labels[neg_id]>=5?1:0; 
+          gpair[pos_id].grad += 0.5*(1-alpha)*w*(pos_pred - pos_label);
+          gpair[neg_id].grad += 0.5*(1-alpha)*w*(neg_pred - neg_label);
+          gpair[pos_id].hess += 0.5*(1-alpha)*w*std::max(pos_pred*(1-pos_pred),eps);
+          gpair[neg_id].hess += 0.5*(1-alpha)*w*std::max(neg_pred*(1-neg_pred),eps);
+	  //std::cout << "pair-grad  " << alpha*g * w << " classification grad "<<0.5*(1-alpha)*w*(pos_pred - pos_label);
+          //compute pairloss here
+          float pair_loss = -log(common::Sigmoid(pos_pred - neg_pred));
+          float cls_loss = 0;
+          if(pos_label==1) cls_loss += -log(common::Sigmoid(pos_pred));
+          else cls_loss += -log(1-common::Sigmoid(pos_pred));
+          if(neg_label==1) cls_loss += -log(common::Sigmoid(neg_pred));
+          else cls_loss += -log(1-common::Sigmoid(neg_pred));
+          total_pair_loss += pair_loss;
+          total_cls_loss += cls_loss;
+          total_weight += w;
         }
       }
     }
+    std::cout << "pair loss  " << total_pair_loss/total_weight << " cls loss "<<total_cls_loss/total_weight<<std::endl;
   }
   const char* DefaultEvalMetric(void) const override {
     return "map";
