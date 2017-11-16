@@ -86,6 +86,7 @@ struct EvalLogLoss : public EvalEWiseBase<EvalLogLoss> {
     return "logloss";
   }
   inline bst_float EvalRow(bst_float y, bst_float py) const {
+    y = y>=1.0f?1.0f:y;
     const bst_float eps = 1e-16f;
     const bst_float pneg = 1.0f - py;
     if (py < eps) {
