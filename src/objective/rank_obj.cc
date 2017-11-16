@@ -37,6 +37,19 @@ class LambdaRankObj : public ObjFunction {
   void Configure(const std::vector<std::pair<std::string, std::string> >& args) override {
     param_.InitAllowUnknown(args);
   }
+
+  inline bst_float EvalLogLoss(bst_float y, bst_float py) const {
+    const bst_float eps = 1e-16f;
+    const bst_float pneg = 1.0f - py;
+    if (py < eps) {
+      return -y * std::log(eps) - (1.0f - y)  * std::log(1.0f - eps);
+    } else if (pneg < eps) {
+      return -y * std::log(1.0f - eps) - (1.0f - y)  * std::log(eps);
+    } else {
+      return -y * std::log(py) - (1.0f - y) * std::log(pneg);
+    }
+  }
+ 
   void GetGradient(const std::vector<bst_float>& preds,
                    const MetaInfo& info,
                    int iter,
@@ -44,66 +57,80 @@ class LambdaRankObj : public ObjFunction {
     CHECK_EQ(preds.size(), info.rankpairs.size()) << "pairs number predict size not match";
     std::vector<bst_gpair>& gpair = *out_gpair;
     gpair.resize(preds.size());
+
     const bst_omp_uint docnum = static_cast<bst_omp_uint>(info.rankpairs.size());
+    for (bst_omp_uint docid = 0; docid < docnum; ++docid) {
+        gpair[docid] = bst_gpair(0.0f,0.0f);
+    }
+
     double total_pair_loss = 0;
     double total_cls_loss = 0;
     double total_weight = 0;
+
+    // quick consistency when group is not available
+    std::vector<unsigned> tgptr(2, 0); tgptr[1] = static_cast<unsigned>(info.labels.size());
+    const std::vector<unsigned> &gptr = info.group_ptr.size() == 0 ? tgptr : info.group_ptr;
+    CHECK(gptr.size() != 0 && gptr.back() == info.labels.size())
+        << "group structure not consistent with #rows";
+    const bst_omp_uint ngroup = static_cast<bst_omp_uint>(gptr.size() - 1);
 
     #pragma omp parallel
     {
       // parall construct, declare random number generator here, so that each
       // thread use its own random number generator, seed by thread id and current iteration
       common::RandomEngine rnd(iter * 1111 + omp_get_thread_num());
-
       std::vector<LambdaPair> pairs;
       std::vector< std::pair<bst_float, unsigned> > rec;
       #pragma omp for schedule(static)
-      for (bst_omp_uint docid = 0; docid < docnum; ++docid) {
-        for (size_t i = 0; i < info.rankpairs[docid].size(); ++i) {
-          size_t cmp_docid = info.rankpairs[docid][i];
-          //float weight = common::Sigmoid(info.pairweight[docid][i]/30.0);
-          float weight = info.pairweight[docid][i];
-          int pos_id, neg_id;
-          if(info.pairweight[docid][i]>0) 
-          {
-             pos_id = docid;
-             neg_id = cmp_docid;
-          }
-          else{
-            pos_id = cmp_docid;
-            neg_id = docid;
-          }
-          
-	  const float alpha = 0.5;
-          bst_float pos_pred = preds[pos_id];
-          bst_float neg_pred = preds[neg_id];
-          const float eps = 1e-16f;
-          const float w = 1.0f; //std::max((float)eps,(float)std::fabs(weight));
-          bst_float p = common::Sigmoid(pos_pred - neg_pred);
-          bst_float g = p - 1.0f;
-          bst_float h = std::max(p * (1.0f - p), eps);
-          // accumulate gradient and hessian in both pid, and nid
-          gpair[pos_id].grad += alpha*g * w;
-          gpair[pos_id].hess += alpha*2.0f * w * h;
-          gpair[neg_id].grad -= alpha*g * w;
-          gpair[neg_id].hess += alpha*2.0f * w * h;
-	  float pos_label = info.labels[pos_id]>=5?1:0;
-	  float neg_label = info.labels[neg_id]>=5?1:0; 
-          gpair[pos_id].grad += 0.5*(1-alpha)*w*(pos_pred - pos_label);
-          gpair[neg_id].grad += 0.5*(1-alpha)*w*(neg_pred - neg_label);
-          gpair[pos_id].hess += 0.5*(1-alpha)*w*std::max(pos_pred*(1-pos_pred),eps);
-          gpair[neg_id].hess += 0.5*(1-alpha)*w*std::max(neg_pred*(1-neg_pred),eps);
-	  //std::cout << "pair-grad  " << alpha*g * w << " classification grad "<<0.5*(1-alpha)*w*(pos_pred - pos_label);
-          //compute pairloss here
-          float pair_loss = -log(common::Sigmoid(pos_pred - neg_pred));
-          float cls_loss = 0;
-          if(pos_label==1) cls_loss += -log(common::Sigmoid(pos_pred));
-          else cls_loss += -log(1-common::Sigmoid(pos_pred));
-          if(neg_label==1) cls_loss += -log(common::Sigmoid(neg_pred));
-          else cls_loss += -log(1-common::Sigmoid(neg_pred));
-          total_pair_loss += pair_loss;
-          total_cls_loss += cls_loss;
-          total_weight += w;
+      for (bst_omp_uint k = 0; k < ngroup; ++k) {
+          for (bst_omp_uint docid = gptr[k]; docid < gptr[k+1]; ++docid) {
+            for (size_t i = 0; i < info.rankpairs[docid].size(); ++i) {
+              size_t cmp_docid = info.rankpairs[docid][i];
+              //float weight = common::Sigmoid(info.pairweight[docid][i]/30.0);
+              float weight = info.pairweight[docid][i];
+              int pos_id, neg_id;
+              if(info.pairweight[docid][i]>0) 
+              {
+                 pos_id = docid;
+                 neg_id = cmp_docid;
+              }
+              else{
+                pos_id = cmp_docid;
+                neg_id = docid;
+              }
+
+              //if(docid<=100) std::cout << "pos id "<<pos_id+1 << " neg id"<<neg_id+1<<std::endl;
+              const float alpha = 0.0f;
+              const float sigma = 100;
+              bst_float pos_pred = preds[pos_id];
+              bst_float neg_pred = preds[neg_id];
+              const float eps = 1e-16f;
+              const float w = 1.0f;//std::max((float)eps,(float)std::fabs(weight));         
+              bst_float p = common::Sigmoid(sigma*(pos_pred - neg_pred));
+              bst_float g = sigma*(p - 1.0f);
+              bst_float h = sigma*std::max(p * (1.0f - p), eps);
+              // accumulate gradient and hessian in both pid, and nid
+              
+              gpair[pos_id].grad += alpha*g * w;
+              gpair[pos_id].hess += alpha*2.0f * w * h;
+              gpair[neg_id].grad -= alpha*g * w;
+              gpair[neg_id].hess += alpha*2.0f * w * h;
+              float pos_label = info.labels[pos_id]>0?1:0;
+              float neg_label = info.labels[neg_id]>0?1:0;
+              gpair[pos_id].grad += 0.5*(1-alpha)*w*(pos_pred - pos_label);
+              gpair[neg_id].grad += 0.5*(1-alpha)*w*(neg_pred - neg_label);
+              gpair[pos_id].hess += 0.5*(1-alpha)*w*std::max(pos_pred*(1-pos_pred),eps);
+              gpair[neg_id].hess += 0.5*(1-alpha)*w*std::max(neg_pred*(1-neg_pred),eps);
+              //std::cout << "pair-grad  " << alpha*g * w << " classification grad "<<0.5*(1-alpha)*w*(pos_pred - pos_label);
+              //compute pairloss here
+              float pair_loss = EvalLogLoss(1.0f,sigma*(pos_pred - neg_pred));
+              float cls_loss = 0;
+              cls_loss += 0.5*EvalLogLoss(pos_label,pos_pred);
+              cls_loss += 0.5*EvalLogLoss(neg_label,neg_pred);
+              total_pair_loss += pair_loss;
+              total_cls_loss += cls_loss;
+              total_weight += w;
+            }
         }
       }
     }

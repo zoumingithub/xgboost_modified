@@ -32,6 +32,7 @@ class Booster {
   }
 
   inline void SetParam(const std::string& name, const std::string& val) {
+    std::cout << "Param Name "<<name<< " Val "<<val<<std::endl;
     auto it = std::find_if(cfg_.begin(), cfg_.end(),
       [&name, &val](decltype(*cfg_.begin()) &x) {
         if (name == "eval_metric") {

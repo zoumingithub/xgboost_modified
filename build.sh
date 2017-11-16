@@ -5,7 +5,7 @@
 # In most cases, type make will give what you want.
 
 # See additional instruction in doc/build.md
-
+set -x
 if make; then
     echo "Successfully build multi-thread xgboost"
 else
@@ -18,3 +18,5 @@ else
     echo "If you want multi-threaded version"
     echo "See additional instructions in doc/build.md"
 fi
+cd python-package
+sudo python setup.py install
