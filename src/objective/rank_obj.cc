@@ -100,7 +100,7 @@ class LambdaRankObj : public ObjFunction {
               }
 
               //if(docid<=100) std::cout << "pos id "<<pos_id+1 << " neg id"<<neg_id+1<<std::endl;
-              const float alpha = 0.0f;
+              const float alpha = 0.5f;
               const float sigma = 100;
               bst_float pos_pred = preds[pos_id];
               bst_float neg_pred = preds[neg_id];
