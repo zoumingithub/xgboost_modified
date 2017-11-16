@@ -33,7 +33,7 @@ struct EvalEWiseBase : public Metric {
     #pragma omp parallel for reduction(+: sum, wsum) schedule(static)
     for (omp_ulong i = 0; i < ndata; ++i) {
       const bst_float wt = info.GetWeight(i);
-      sum += static_cast<const Derived*>(this)->EvalRow(info.labels[i], preds[i]) * wt;
+      sum += static_cast<const Derived*>(this)->EvalRow(info.labels[i]>=1.0?1.0:info.labels[i], preds[i]) * wt;
       wsum += wt;
     }
     double dat[2]; dat[0] = sum, dat[1] = wsum;
