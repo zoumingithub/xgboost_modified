@@ -100,12 +100,12 @@ class LambdaRankObj : public ObjFunction {
               }
 
               //if(docid<=100) std::cout << "pos id "<<pos_id+1 << " neg id"<<neg_id+1<<std::endl;
-              const float alpha = 0.5f;
-              const float sigma = 100;
+              const float alpha = 1.0f;
+              const float sigma = 1.0f;
               bst_float pos_pred = preds[pos_id];
               bst_float neg_pred = preds[neg_id];
               const float eps = 1e-16f;
-              const float w = 1.0f;//std::max((float)eps,(float)std::fabs(weight));         
+              const float w = std::max((float)eps,(float)std::fabs(weight));         
               bst_float p = common::Sigmoid(sigma*(pos_pred - neg_pred));
               bst_float g = sigma*(p - 1.0f);
               bst_float h = sigma*std::max(p * (1.0f - p), eps);
